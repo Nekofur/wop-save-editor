@@ -20,9 +20,9 @@
 - **实时模式**：游戏开着时通过游戏自己的本地服务写入，不必退出游戏。
 - **安全**：写入前自动整份备份存档；连不上本地服务时自动只读；有未结算对局时二次确认；全程日志（`logs/`）。
 
-### 如何使用
+## 如何使用
 
-1. 从 [Releases](../../releases) 下载 `WOP-Save-Editor-vX.Y.Z-win64.zip`，**解压整个文件夹**（不要只复制 exe）。
+1. 从 [Releases](../../releases) 下载 `WOP-Save-Editor-vX.Y.Z-win64.zip`，找一个你可以找到的地方 **解压整个文件夹** （不要只复制 exe）。
 2. 把 `config.example.json` 复制为 `config.json`，把 `gameRoot` 改成你的游戏根目录：
    ```json
    { "gameRoot": "D:\\game\\WarThunderOffline\\WarThunderOffline" }
