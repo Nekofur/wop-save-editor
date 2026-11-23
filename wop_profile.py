@@ -92,6 +92,47 @@ CLASS_LABELS = {
 }
 
 
+def is_game_root(path: Path) -> bool:
+    """判断目录是不是游戏根目录（含 backend/service.py 与 data/unit-catalog.json）。"""
+    path = Path(path)
+    return ((path / "backend" / "service.py").is_file()
+            and (path / "data" / "unit-catalog.json").is_file())
+
+
+SKIP_DIRS = {"$RECYCLE.BIN", "System Volume Information", "__pycache__", "node_modules"}
+
+
+def resolve_game_root(path, max_depth: int = 3, limit: int = 400) -> Path | None:
+    """玩家选任意相关目录都行：自动向下找到真正的游戏根目录。
+
+    D:\\game、D:\\game\\WarThunderOffline 这类“只差一层”的选择都能救回来，
+    采用广度优先，返回层级最浅的那个匹配目录。
+    """
+    start = Path(path)
+    if is_game_root(start):
+        return start
+    frontier = [start]
+    visited = 0
+    for _ in range(max_depth):
+        following = []
+        for folder in frontier:
+            try:
+                children = sorted(p for p in folder.iterdir() if p.is_dir())
+            except OSError:
+                continue
+            for child in children:
+                if child.name in SKIP_DIRS or child.name.startswith("$"):
+                    continue
+                visited += 1
+                if visited > limit:
+                    return None
+                if is_game_root(child):
+                    return child
+                following.append(child)
+        frontier = following
+    return None
+
+
 def find_game_root() -> Path | None:
     """配置文件优先，其次尝试常见路径。"""
     config = APP_DIR / "config.json"
@@ -104,9 +145,12 @@ def find_game_root() -> Path | None:
     candidates.append(DEFAULT_GAME_ROOT)
     candidates.append(Path(r"D:\WarThunderOffline"))
     for candidate in candidates:
-        if (candidate / "backend" / "service.py").is_file() and (
-            candidate / "data" / "unit-catalog.json").is_file():
+        if is_game_root(candidate):
             return candidate
+        if candidate.is_dir():
+            resolved = resolve_game_root(candidate)
+            if resolved is not None:
+                return resolved
     return None
 
 

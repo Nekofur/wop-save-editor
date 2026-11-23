@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import wop_profile as wp  # noqa: E402
 
 APP_TITLE = "War Thunder Offline 存档修改器"
+APP_VERSION = "1.0.1"
 TREE_FONT = ("Microsoft YaHei UI", 9)
 UI_FONT = ("Microsoft YaHei UI", 9)
 
@@ -48,7 +49,7 @@ def fmt(number: int) -> str:
 class EditorApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title(APP_TITLE)
+        self.title(f"{APP_TITLE} v{APP_VERSION}")
         self.geometry("1220x800")
         self.minsize(1040, 680)
         self._setup_style()
@@ -81,11 +82,19 @@ class EditorApp(tk.Tk):
         self._log_path = LOG_DIR / f"editor-{datetime.now():%Y%m%d}.log"
         LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-        if self.game_root is None:
-            self.after(100, self._fatal_no_game)
-            return
         self._build_ui()
-        self.after(60, self.reload_accounts)
+        self.after(60, self._startup)
+
+    def _startup(self):
+        """有游戏目录就直接读账号；没有就提示玩家在顶部填写。"""
+        self.log(f"启动 v{APP_VERSION}")
+        if self.game_root is None:
+            self.status_var.set("请先在上方设置游戏目录（可以点“浏览…”选择文件夹）")
+            self.guard_var.set("尚未设置游戏目录")
+            self.log("未找到游戏目录，等待玩家填写")
+            self.path_entry.focus_set()
+            return
+        self.reload_accounts()
 
     # ------------------------------------------------------------ 启动自检
     def _mark_ready(self):
@@ -132,8 +141,57 @@ class EditorApp(tk.Tk):
         messagebox.showerror(
             APP_TITLE,
             "没有找到 War Thunder Offline 游戏目录。\n\n"
-            "请确认游戏已解压，并在本工具同目录的 config.json 中填写正确的 gameRoot。")
-        self.destroy()
+            "请在上方游戏目录栏点“浏览…”选择游戏根目录，工具会自动记住。")
+
+    # ------------------------------------------------------------ 游戏目录
+    def browse_game_root(self):
+        from tkinter import filedialog
+
+        start = str(self.game_root) if self.game_root else str(Path.home())
+        chosen = filedialog.askdirectory(title="选择 War Thunder Offline 游戏根目录", initialdir=start)
+        if not chosen:
+            return
+        self.path_var.set(chosen)
+        self.apply_game_root(chosen)
+
+    def apply_game_root(self, value: str | None = None):
+        """校验并保存游戏目录，然后重新读取账号与载具数据。"""
+        raw = (self.path_var.get() if value is None else value).strip().strip('"').strip("'")
+        if not raw:
+            messagebox.showerror(APP_TITLE, "游戏目录不能为空。")
+            return
+        root = wp.resolve_game_root(raw)
+        if root is None:
+            messagebox.showerror(
+                APP_TITLE,
+                "没有在这个位置找到 War Thunder Offline 游戏目录。\n\n"
+                "请选择包含 backend 与 data 两个子文件夹的那一层，"
+                "或者选它的上一层（例如 D:\\game），工具会自动往下找。")
+            return
+        if Path(raw) != root:
+            self.log(f"已从 {raw} 自动定位到游戏根目录 {root}")
+        self.game_root = root
+        self.path_var.set(str(root))
+        self._save_config(root)
+        if self.profile is not None:
+            self.profile.close()
+            self.profile = None
+        self.rows = []
+        self.hidden_rows = []
+        self.snapshot = None
+        self.log(f"游戏目录已设置为 {root}")
+        self.reload_accounts()
+
+    def _save_config(self, root: Path):
+        """写入 exe 同目录的 config.json，下次启动直接使用。"""
+        target = wp.APP_DIR / "config.json"
+        try:
+            target.write_text(json.dumps({"gameRoot": str(root)}, ensure_ascii=False, indent=2),
+                              encoding="utf-8")
+            self.log(f"已保存配置 {target}")
+        except OSError as error:
+            self.log("保存配置失败：" + repr(error))
+            messagebox.showwarning(APP_TITLE, f"目录已应用，但写入 config.json 失败：\n{error}")
 
     # ------------------------------------------------------------------ 界面
     def _build_ui(self):
@@ -144,8 +202,15 @@ class EditorApp(tk.Tk):
         top = ttk.LabelFrame(outer, text=" 存档 ", padding=(8, 6))
         top.pack(fill="x")
         ttk.Label(top, text="游戏目录：").grid(row=0, column=0, sticky="w")
-        ttk.Label(top, text=str(self.game_root), foreground="#5f6368").grid(
-            row=0, column=1, columnspan=5, sticky="w", padx=(0, 8))
+        self.path_var = tk.StringVar(value=str(self.game_root) if self.game_root else "")
+        self.path_entry = ttk.Entry(top, textvariable=self.path_var, width=62)
+        self.path_entry.grid(row=0, column=1, columnspan=3, sticky="we", padx=(0, 6))
+        self.path_entry.bind("<Return>", lambda _e: self.apply_game_root())
+        ttk.Button(top, text="浏览…", command=self.browse_game_root).grid(
+            row=0, column=4, padx=(0, 6))
+        ttk.Button(top, text="应用", command=self.apply_game_root,
+                   style="Accent.TButton").grid(row=0, column=5)
+        top.columnconfigure(1, weight=1)
         ttk.Label(top, text="账号：").grid(row=1, column=0, sticky="w", pady=(6, 0))
         self.account_box = ttk.Combobox(top, state="readonly", width=28)
         self.account_box.grid(row=1, column=1, sticky="w", pady=(6, 0))
@@ -231,7 +296,6 @@ class EditorApp(tk.Tk):
         quick.grid(row=6, column=0, columnspan=5, sticky="w", pady=(4, 4))
         ttk.Label(quick, text="快速填入：", style="Muted.TLabel").pack(side="left")
         for label, key, value in (
-            ("银狮 100 万", "silver", 1_000_000),
             ("银狮 1 亿", "silver", 100_000_000),
             ("金鹰 1 亿", "gold", 100_000_000),
             ("GJN 10 万", "coins", 100_000),
@@ -417,10 +481,17 @@ class EditorApp(tk.Tk):
 
     # ------------------------------------------------------------------ 账号
     def reload_accounts(self):
+        if self.game_root is None:
+            self.status_var.set("请先在上方设置游戏目录")
+            return
         accounts = wp.list_accounts(self.game_root)
         if not accounts:
-            messagebox.showerror(APP_TITLE, "Save 目录下没有找到任何本地账号存档。")
-            self.status_var.set("未找到账号存档")
+            self._accounts = {}
+            self.account_box.set("")
+            self.account_box.configure(values=[])
+            self.status_var.set(f"这个目录下没有账号存档：{self.game_root}")
+            self.guard_var.set("没有找到 Save 目录下的本地账号")
+            self.log("没有找到账号存档：" + str(self.game_root))
             return
         labels = [f"{item['username']}  ({item['folder']})" if item["username"] != item["folder"]
                   else item["folder"] for item in accounts]
