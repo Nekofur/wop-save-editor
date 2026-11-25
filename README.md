@@ -1,4 +1,5 @@
-# WOP Save Editor · War Thunder Offline 存档修改器
+# WOP Save Editor · War Thunder Offline 存档修改器 
+对应离线版 0.9.5 版本  
 
 一个给 **War Thunder Offline（WOP 离线版）** 用的本地存档修改器：
 改金鹰 / 银狮 / Gaijin 币，解锁任意载具，查看并解锁隐藏载具，**游戏运行中也能实时修改**。
